@@ -1,0 +1,1126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AudioReader Pro - PDF Text-to-Speech Engine</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PDF.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+      if (typeof pdfjsLib !== 'undefined') {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      }
+    </script>
+    <style>
+      /* Custom Word Overlay Marker Highlighting Styles */
+      .pdf-word-token {
+        position: relative;
+        display: inline;
+        transition: background-color 0.12s ease, color 0.12s ease, transform 0.12s ease;
+        border-radius: 3px;
+        padding: 0 2px;
+        cursor: pointer;
+      }
+
+      .pdf-word-token:hover {
+        background-color: rgba(99, 102, 241, 0.15);
+      }
+
+      .word-highlight {
+        background-color: #fde047 !important; /* Vivid Marker Yellow */
+        color: #0f172a !important;
+        font-weight: 800 !important;
+        box-shadow: 0 0 0 2px #f59e0b, 0 2px 6px rgba(0, 0, 0, 0.18) !important;
+        border-radius: 4px !important;
+        z-index: 20 !important;
+        transform: scale(1.06);
+      }
+
+      /* Scrollbar styling */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f1f5f9;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+    </style>
+  </head>
+  <body class="bg-slate-100 text-slate-800 font-sans min-h-screen flex flex-col">
+    <!-- Header Bar -->
+    <header class="bg-white border-b border-slate-200 text-slate-800 px-6 py-3.5 sticky top-0 z-30 shadow-xs">
+      <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+        <!-- Logo & Title -->
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center text-white shadow-sm font-bold text-lg">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+            </svg>
+          </div>
+          <div>
+            <h1 class="text-base font-bold text-slate-900 leading-tight flex items-center gap-2">
+              AudioReader Pro <span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-semibold font-mono">Enterprise TTS</span>
+            </h1>
+            <p id="doc-title" class="text-xs text-slate-500 font-medium truncate max-w-xs sm:max-w-md">
+              Upload a PDF document to listen with real-time text highlighting
+            </p>
+          </div>
+        </div>
+
+        <!-- Speech Engine Status Badge -->
+        <div id="status-badge" class="hidden sm:flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full border border-slate-200 text-slate-600 text-xs font-medium">
+          <span id="status-dot" class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          <span id="status-badge-text">Speech Engine: Ready</span>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex items-center space-x-2">
+          <button
+            id="load-demo-btn"
+            class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg shadow-2xs transition-colors cursor-pointer"
+            title="Load a sample demo PDF"
+          >
+            <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg>
+            <span class="hidden sm:inline">Try Sample</span>
+          </button>
+
+          <label class="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg cursor-pointer transition-colors shadow-2xs">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+            <span>Upload PDF</span>
+            <input type="file" id="file-input" accept="application/pdf" class="hidden" />
+          </label>
+
+          <button
+            id="diagnostics-btn"
+            class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-mono text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300/80 rounded-lg transition-colors cursor-pointer"
+            title="Diagnostics"
+          >
+            <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            <span class="hidden md:inline">Diagnostics</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- App Content Wrapper -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 flex flex-col gap-4">
+      <!-- Top Control Toolbar -->
+      <div class="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden text-slate-800 p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3">
+        <!-- Playback Actions -->
+        <div class="flex items-center space-x-2">
+          <!-- Main Read Page Button -->
+          <button
+            id="readBtn"
+            class="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm rounded-lg shadow-sm transition-all cursor-pointer"
+            title="🔊 Read Page (Clears queue and starts fresh TTS)"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path></svg>
+            <span id="readBtn-text">🔊 READ PAGE</span>
+          </button>
+
+          <!-- Stop Button -->
+          <button
+            id="stopBtn"
+            class="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-red-50 hover:text-red-700 hover:border-red-300 text-slate-700 font-bold text-xs rounded-lg border border-slate-300 transition-colors cursor-pointer"
+            title="⛔ Stop Reading (Clears queues)"
+          >
+            <svg class="w-3.5 h-3.5 fill-current text-red-500" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"></rect></svg>
+            <span>⛔ STOP</span>
+          </button>
+
+          <!-- Page Navigation -->
+          <div class="flex items-center bg-slate-100 rounded-lg p-1 border border-slate-200">
+            <button id="prev-page" class="p-1.5 text-slate-700 hover:text-slate-900 disabled:opacity-40 hover:bg-slate-200 rounded transition-colors cursor-pointer" title="Previous Page">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+            </button>
+            <span class="text-xs font-mono font-medium px-2 text-slate-700">
+              Page <input id="page-num-input" type="number" min="1" value="1" class="w-10 text-center bg-white border border-slate-300 rounded mx-1 font-bold text-slate-900 py-0.5" /> / <span id="total-pages">1</span>
+            </span>
+            <button id="next-page" class="p-1.5 text-slate-700 hover:text-slate-900 disabled:opacity-40 hover:bg-slate-200 rounded transition-colors cursor-pointer" title="Next Page">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Secondary Controls & Audio Options Toggle -->
+        <div class="flex items-center space-x-2">
+          <!-- Zoom Controls -->
+          <div class="hidden md:flex items-center bg-white rounded-lg border border-slate-300 p-0.5 shadow-2xs">
+            <button id="zoom-out" class="p-1 text-slate-600 hover:text-slate-900 rounded hover:bg-slate-100" title="Zoom Out">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7"></path></svg>
+            </button>
+            <span id="zoom-text" class="text-xs font-mono font-medium text-slate-700 px-2 min-w-[3rem] text-center">125%</span>
+            <button id="zoom-in" class="p-1 text-slate-600 hover:text-slate-900 rounded hover:bg-slate-100" title="Zoom In">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7"></path></svg>
+            </button>
+          </div>
+
+          <!-- Auto Next Page Toggle -->
+          <label class="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-300 text-xs text-slate-700 font-medium cursor-pointer select-none shadow-2xs">
+            <input type="checkbox" id="auto-next-cb" class="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+            <span class="flex items-center gap-1">Auto Next Page</span>
+          </label>
+
+          <!-- Voice & Speed Settings Toggle -->
+          <button id="toggle-settings-btn" class="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 font-medium text-xs rounded-lg border border-slate-300 transition-colors shadow-2xs cursor-pointer">
+            <svg class="w-3.5 h-3.5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+            <span>Voice & Audio</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Settings Panel (Collapsible) -->
+      <div id="settings-panel" class="hidden p-4 bg-white border border-slate-200 rounded-xl grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-700 shadow-2xs">
+        <!-- Voice Select -->
+        <div class="space-y-1.5">
+          <label class="text-slate-600 font-bold uppercase tracking-wider text-[10px] flex items-center justify-between">
+            <span>Speech Voice</span>
+            <span id="voice-count-text" class="text-[10px] text-slate-400 font-mono">0 available</span>
+          </label>
+          <select id="voice-select" class="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-indigo-500 text-xs shadow-2xs font-medium">
+            <option value="">Auto-Detect / System Default</option>
+          </select>
+        </div>
+
+        <!-- Speed Rate Slider -->
+        <div class="space-y-1.5">
+          <div class="flex justify-between text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+            <span>Reading Speed</span>
+            <span id="speed-val" class="font-mono text-indigo-600 text-xs">1.00x</span>
+          </div>
+          <input type="range" id="speed-rate" min="0.5" max="2.0" step="0.05" value="1.0" class="w-full accent-indigo-600 cursor-pointer" />
+          <div class="flex justify-between text-[10px] text-slate-400 font-mono">
+            <span>0.5x</span>
+            <span>1.0x Normal</span>
+            <span>2.0x</span>
+          </div>
+        </div>
+
+        <!-- Pitch & Volume Sliders -->
+        <div class="grid grid-cols-2 gap-3">
+          <div class="space-y-1">
+            <div class="flex justify-between text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+              <span>Pitch</span>
+              <span id="pitch-val" class="font-mono text-indigo-600 text-xs">1.0</span>
+            </div>
+            <input type="range" id="pitch-rate" min="0.5" max="1.5" step="0.1" value="1.0" class="w-full accent-indigo-600 cursor-pointer" />
+          </div>
+          <div class="space-y-1">
+            <div class="flex justify-between text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+              <span>Volume</span>
+              <span id="volume-val" class="font-mono text-indigo-600 text-xs">100%</span>
+            </div>
+            <input type="range" id="volume-rate" min="0.0" max="1.0" step="0.05" value="1.0" class="w-full accent-indigo-600 cursor-pointer" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Main PDF Viewing Stage (Full Canvas + Overlay Word Highlights) -->
+      <div id="viewer-container" class="relative flex-1 bg-slate-200/80 border border-slate-300 rounded-xl overflow-auto min-h-[550px] p-6 flex items-center justify-center shadow-xs">
+        <!-- Empty Upload State -->
+        <div id="dropzone-area" class="text-center p-8 max-w-md mx-auto">
+          <div class="w-16 h-16 mx-auto mb-4 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 shadow-2xs">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+          </div>
+          <h2 class="text-xl font-bold text-slate-900 mb-2">No Document Loaded</h2>
+          <p class="text-xs text-slate-500 mb-6 font-medium">
+            Upload a PDF document or test with our instant sample demo to experience real-time word narration highlighting.
+          </p>
+          <button id="dropzone-demo-btn" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer">
+            ✨ Load Sample Demo PDF
+          </button>
+        </div>
+
+        <!-- Rendered PDF Page Stage -->
+        <div id="canvas-stage" class="hidden relative rounded border border-slate-300 shadow-xl overflow-hidden bg-white">
+          <!-- Active Narration Badge -->
+          <div id="narrating-badge" class="hidden absolute top-3 right-3 bg-indigo-600 text-white text-[11px] font-bold px-3 py-1 rounded-full shadow-md z-20 animate-pulse flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path></svg>
+            <span>NARRATING PAGE</span>
+          </div>
+
+          <!-- Canvas Element -->
+          <canvas id="pdf-canvas" class="block"></canvas>
+
+          <!-- Text Layer for Overlay Word Highlighting -->
+          <div id="text-layer" class="absolute inset-0 pointer-events-none select-none"></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Diagnostics Modal -->
+    <div id="diagnostics-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+      <div class="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 shadow-2xl text-slate-800 relative">
+        <div class="flex items-center justify-between pb-3.5 border-b border-slate-200 mb-4">
+          <div class="flex items-center space-x-2">
+            <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            <h3 class="font-bold text-base text-slate-900">Speech Synthesis & Recognition Diagnostics</h3>
+          </div>
+          <button id="close-diag-btn" class="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <p class="text-[11px] text-slate-500 font-mono font-medium">Speech Synthesis (TTS)</p>
+            <p class="text-sm font-bold mt-0.5 text-emerald-700 flex items-center gap-1">✓ Supported</p>
+          </div>
+          <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <p class="text-[11px] text-slate-500 font-mono font-medium">Voice Recognition (STT)</p>
+            <p id="diag-stt-val" class="text-sm font-bold mt-0.5 text-indigo-700 flex items-center gap-1">Checking...</p>
+          </div>
+          <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <p class="text-[11px] text-slate-500 font-mono font-medium">Voices Loaded</p>
+            <p id="diag-voice-count" class="text-sm font-bold mt-0.5 font-mono text-indigo-700">0 voices</p>
+          </div>
+          <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <p class="text-[11px] text-slate-500 font-mono font-medium">speechSynthesis.speaking</p>
+            <p id="diag-speaking-val" class="text-sm font-bold font-mono mt-0.5 text-slate-600">false</p>
+          </div>
+        </div>
+
+        <div class="mb-4 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold text-slate-800">Run Queue Reset & Audio Test</span>
+            <button id="run-audio-test-btn" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-lg transition-colors shadow-2xs cursor-pointer">
+              🔊 Test Audio
+            </button>
+          </div>
+          <div id="diag-log-box" class="bg-slate-900 rounded-lg p-3 font-mono text-[11px] text-slate-200 max-h-32 overflow-y-auto space-y-1 border border-slate-800 shadow-inner">
+            <span class="text-slate-500 italic">Click "Test Audio" to verify system utterance...</span>
+          </div>
+        </div>
+
+        <div class="flex justify-end pt-3 border-t border-slate-200">
+          <button id="close-diag-btn2" class="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 rounded-lg transition-colors cursor-pointer">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vanilla JavaScript Core Logic for Cross-Browser Web Speech API -->
+    <script>
+      (function () {
+        // App State
+        let pdfDoc = null;
+        let pageNum = 1;
+        let currentScale = 1.25;
+        let isSpeaking = false;
+        let isPaused = false;
+        let pageRenderTask = null;
+        let availableVoices = [];
+        let wordSpans = []; // Array of { word, start, end, el }
+        let currentPageText = "";
+        let simulatedTimer = null;
+        let keepAliveInterval = null;
+        let speechChunks = [];
+        let currentChunkIndex = 0;
+        let isUnlocked = false;
+
+        // Cross-Browser Speech Recognition API detection
+        const SpeechRecognition = window.SpeechRecognition || 
+                                  window.webkitSpeechRecognition || 
+                                  window.mozSpeechRecognition || 
+                                  window.msSpeechRecognition;
+        let recognition = null;
+        let isListening = false;
+        let recognitionRestartTimeout = null;
+
+        // Audio Unlock & Speech Recognition Unlock on User Gesture (Mobile Safari / Chrome)
+        function unlockSpeech() {
+            if (!('speechSynthesis' in window)) {
+                console.error("Speech synthesis not supported");
+                return;
+            }
+
+            if (!isUnlocked) {
+                const utter = new SpeechSynthesisUtterance(" ");
+                utter.volume = 0;
+
+                utter.onend = () => {
+                    console.log("Speech engine unlocked");
+                };
+
+                window.speechSynthesis.speak(utter);
+
+                isUnlocked = true;
+            }
+        }
+
+        window.addEventListener('click', unlockSpeech, { passive: true });
+        window.addEventListener('touchstart', unlockSpeech, { passive: true });
+
+        // Initialize SpeechSynthesis Voices across browsers
+        function loadVoices() {
+          if (!('speechSynthesis' in window)) return;
+          availableVoices = window.speechSynthesis.getVoices() || [];
+          const voiceSelect = document.getElementById('voice-select');
+          if (!voiceSelect) return;
+
+          const currentSelection = voiceSelect.value;
+          voiceSelect.innerHTML = '<option value="">Auto-Detect / System Default</option>';
+
+          if (availableVoices.length > 0) {
+            // Sort to prioritize default or English voices
+            availableVoices.sort((a, b) => {
+              if (a.default) return -1;
+              if (b.default) return 1;
+              const aEn = (a.lang || '').startsWith('en') ? 0 : 1;
+              const bEn = (b.lang || '').startsWith('en') ? 0 : 1;
+              return aEn - bEn;
+            });
+
+            availableVoices.forEach((voice) => {
+              const option = document.createElement('option');
+              option.value = voice.voiceURI || voice.name;
+              option.textContent = `${voice.name} (${voice.lang || 'en'})${voice.default ? ' — Default' : ''}`;
+              if (currentSelection && (option.value === currentSelection || voice.name === currentSelection)) {
+                option.selected = true;
+              }
+              voiceSelect.appendChild(option);
+            });
+          }
+
+          const voiceCountText = document.getElementById('voice-count-text');
+          if (voiceCountText) voiceCountText.textContent = `${availableVoices.length} available`;
+          const diagVoiceCount = document.getElementById('diag-voice-count');
+          if (diagVoiceCount) diagVoiceCount.textContent = `${availableVoices.length} voices`;
+        }
+
+        if ('speechSynthesis' in window) {
+          loadVoices();
+          if (typeof window.speechSynthesis.onvoiceschanged !== 'undefined') {
+            window.speechSynthesis.onvoiceschanged = loadVoices;
+          }
+          // Multiple fallback delays for Chrome, Edge, and Safari voice loading
+          setTimeout(loadVoices, 100);
+          setTimeout(loadVoices, 500);
+          setTimeout(loadVoices, 1500);
+          setTimeout(loadVoices, 3000);
+        }
+
+        // Cross-Browser Voice Recognition Setup (STT)
+        function initSpeechRecognition() {
+          const diagStt = document.getElementById('diag-stt-val');
+          if (!SpeechRecognition) {
+            if (diagStt) {
+              diagStt.textContent = '⚠ Not Supported';
+              diagStt.className = 'text-sm font-bold mt-0.5 text-amber-600 flex items-center gap-1';
+            }
+            console.log('SpeechRecognition API is not supported in this browser.');
+            return;
+          }
+
+          if (diagStt) {
+            diagStt.textContent = '✓ Supported';
+            diagStt.className = 'text-sm font-bold mt-0.5 text-emerald-700 flex items-center gap-1';
+          }
+
+          try {
+            recognition = new SpeechRecognition();
+            try { recognition.continuous = true; } catch (e) {}
+            try { recognition.interimResults = false; } catch (e) {}
+            recognition.lang = 'en-US';
+            recognition.maxAlternatives = 1;
+
+            recognition.onstart = () => {
+              isListening = true;
+              console.log('Voice recognition started (listening for commands)...');
+              const statusText = document.getElementById('status-badge-text');
+              const statusDot = document.getElementById('status-dot');
+              if (statusText && !isSpeaking) {
+                statusText.textContent = 'Speech Engine: Listening for Voice Commands';
+              }
+              if (statusDot) {
+                statusDot.className = 'w-2 h-2 rounded-full bg-indigo-500 animate-ping';
+              }
+              if (diagStt) {
+                diagStt.textContent = '✓ Active & Listening';
+                diagStt.className = 'text-sm font-bold mt-0.5 text-indigo-700 flex items-center gap-1';
+              }
+            };
+
+            recognition.onresult = (event) => {
+              if (!event.results || event.results.length === 0) return;
+              const lastResultIndex = event.results.length - 1;
+              const transcript = event.results[lastResultIndex][0].transcript.trim().toLowerCase();
+              console.log('Voice Command Recognized:', transcript);
+              handleVoiceCommand(transcript);
+            };
+
+            recognition.onerror = (event) => {
+              console.warn('SpeechRecognition error:', event.error);
+              if (event.error === 'no-speech') {
+                // Ignore silent timeouts - onend will restart if isListening
+                return;
+              }
+              if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                isListening = false;
+                if (diagStt) {
+                  diagStt.textContent = '⚠ Mic Access Denied';
+                  diagStt.className = 'text-sm font-bold mt-0.5 text-red-600 flex items-center gap-1';
+                }
+              } else if (event.error === 'audio-capture') {
+                isListening = false;
+                if (diagStt) {
+                  diagStt.textContent = '⚠ No Microphone Found';
+                  diagStt.className = 'text-sm font-bold mt-0.5 text-red-600 flex items-center gap-1';
+                }
+              }
+            };
+
+            recognition.onend = () => {
+              const statusDot = document.getElementById('status-dot');
+              if (statusDot && !isSpeaking) {
+                statusDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+              }
+              if (isListening) {
+                // Safely attempt restart if continuous mode ended or dropped connection
+                if (recognitionRestartTimeout) clearTimeout(recognitionRestartTimeout);
+                recognitionRestartTimeout = setTimeout(() => {
+                  try {
+                    recognition.start();
+                  } catch (e) {
+                    // Already running or invalid state
+                  }
+                }, 300);
+              }
+            };
+          } catch (e) {
+            console.error('Failed to initialize SpeechRecognition:', e);
+          }
+        }
+
+        // Safely start voice recognition listening
+        function startListening() {
+          if (!recognition) return;
+          isListening = true;
+          try {
+            recognition.start();
+          } catch (e) {
+            // If already started or pending, catch gracefully
+          }
+        }
+
+        // Handle voice command phrases
+        function handleVoiceCommand(cmd) {
+          if (!cmd) return;
+          if (cmd.includes('read') || cmd.includes('speak') || cmd.includes('play') || cmd.includes('start') || cmd.includes('begin')) {
+            if (isPaused) {
+              resumeReading();
+            } else {
+              readCurrentPage();
+            }
+          } else if (cmd.includes('pause') || cmd.includes('hold') || cmd.includes('wait')) {
+            pauseReading();
+          } else if (cmd.includes('resume') || cmd.includes('continue')) {
+            resumeReading();
+          } else if (cmd.includes('stop') || cmd.includes('quiet') || cmd.includes('silence') || cmd.includes('halt')) {
+            stopReading();
+          } else if (cmd.includes('next') || cmd.includes('forward')) {
+            if (pdfDoc && pageNum < pdfDoc.numPages) changePage(pageNum + 1);
+          } else if (cmd.includes('previous') || cmd.includes('back') || cmd.includes('prev')) {
+            if (pageNum > 1) changePage(pageNum - 1);
+          } else if (cmd.includes('zoom in') || cmd.includes('enlarge') || cmd.includes('bigger')) {
+            currentScale = Math.min(2.5, currentScale + 0.25);
+            document.getElementById('zoom-text').textContent = `${Math.round(currentScale * 100)}%`;
+            renderPage(pageNum);
+          } else if (cmd.includes('zoom out') || cmd.includes('shrink') || cmd.includes('smaller')) {
+            currentScale = Math.max(0.75, currentScale - 0.25);
+            document.getElementById('zoom-text').textContent = `${Math.round(currentScale * 100)}%`;
+            renderPage(pageNum);
+          }
+        }
+
+        // Render PDF Page onto Canvas and Build Text Layer Spans
+        async function renderPage(num) {
+          if (!pdfDoc) return;
+          pageNum = num;
+          document.getElementById('page-num-input').value = pageNum;
+          document.getElementById('prev-page').disabled = pageNum <= 1;
+          document.getElementById('next-page').disabled = pageNum >= pdfDoc.numPages;
+
+          const page = await pdfDoc.getPage(pageNum);
+          const viewport = page.getViewport({ scale: currentScale });
+
+          const canvas = document.getElementById('pdf-canvas');
+          const ctx = canvas.getContext('2d');
+
+          const outputScale = window.devicePixelRatio || 1;
+          canvas.width = Math.floor(viewport.width * outputScale);
+          canvas.height = Math.floor(viewport.height * outputScale);
+          canvas.style.width = Math.floor(viewport.width) + 'px';
+          canvas.style.height = Math.floor(viewport.height) + 'px';
+
+          const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
+
+          if (pageRenderTask) {
+            try {
+              pageRenderTask.cancel();
+            } catch (e) {}
+          }
+
+          pageRenderTask = page.render({
+            canvasContext: ctx,
+            transform: transform,
+            viewport: viewport,
+          });
+
+          await pageRenderTask.promise;
+
+          // Build Text Overlay Layer
+          const textContent = await page.getTextContent();
+          buildTextLayer(textContent, viewport);
+        }
+
+        // Build Text Layer Spans positioned directly over the canvas
+        function buildTextLayer(textContent, viewport) {
+          const textLayerDiv = document.getElementById('text-layer');
+          textLayerDiv.innerHTML = '';
+          textLayerDiv.style.width = viewport.width + 'px';
+          textLayerDiv.style.height = viewport.height + 'px';
+
+          currentPageText = '';
+          wordSpans = [];
+
+          textContent.items.forEach((item) => {
+            if (!item.str || item.str.trim().length === 0) return;
+
+            const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+            const fontHeight = Math.sqrt(tx[2] * tx[2] + tx[3] * tx[3]);
+
+            const lineDiv = document.createElement('div');
+            lineDiv.style.position = 'absolute';
+            lineDiv.style.left = tx[4] + 'px';
+            lineDiv.style.top = tx[5] - fontHeight + 'px';
+            lineDiv.style.fontSize = fontHeight + 'px';
+            lineDiv.style.fontFamily = 'sans-serif';
+            lineDiv.style.lineHeight = '1';
+            lineDiv.style.whiteSpace = 'pre';
+            lineDiv.style.color = 'transparent';
+            lineDiv.style.pointerEvents = 'auto';
+
+            const tokens = item.str.split(/(\s+)/);
+            tokens.forEach((token) => {
+              const span = document.createElement('span');
+              span.textContent = token;
+              span.className = 'pdf-word-token';
+
+              if (token.trim().length > 0) {
+                const startIdx = currentPageText.length;
+                currentPageText += token;
+                const endIdx = currentPageText.length;
+
+                const wordObj = {
+                  word: token,
+                  start: startIdx,
+                  end: endIdx,
+                  el: span,
+                };
+                wordSpans.push(wordObj);
+
+                span.title = `Click to read from "${token}"`;
+                span.addEventListener('click', (e) => {
+                  e.stopPropagation();
+                  readFromIndex(startIdx);
+                });
+              } else {
+                currentPageText += token;
+              }
+
+              lineDiv.appendChild(span);
+            });
+
+            currentPageText += ' ';
+            textLayerDiv.appendChild(lineDiv);
+          });
+        }
+
+        // Highlight active word currently being read
+        function highlightWordAt(charIdx) {
+          if (!wordSpans || wordSpans.length === 0) return;
+
+          let targetWord = null;
+
+          for (let i = 0; i < wordSpans.length; i++) {
+            const w = wordSpans[i];
+            if (charIdx >= w.start && charIdx <= w.end) {
+              targetWord = w;
+              break;
+            }
+          }
+
+          if (!targetWord) {
+            let minDist = Infinity;
+            for (let i = 0; i < wordSpans.length; i++) {
+              const w = wordSpans[i];
+              const dist = Math.abs(charIdx - w.start);
+              if (dist < minDist) {
+                minDist = dist;
+                targetWord = w;
+              }
+            }
+          }
+
+          wordSpans.forEach((w) => {
+            if (w === targetWord) {
+              if (!w.el.classList.contains('word-highlight')) {
+                w.el.classList.add('word-highlight');
+                w.el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+              }
+            } else {
+              w.el.classList.remove('word-highlight');
+            }
+          });
+        }
+
+        function clearHighlights() {
+          wordSpans.forEach((w) => w.el.classList.remove('word-highlight'));
+        }
+
+        // Stop Speech and Reset Engine Queue
+        function stopReading() {
+          if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+          }
+          if (simulatedTimer) {
+            clearInterval(simulatedTimer);
+            simulatedTimer = null;
+          }
+          if (keepAliveInterval) {
+            clearInterval(keepAliveInterval);
+            keepAliveInterval = null;
+          }
+          speechChunks = [];
+          currentChunkIndex = 0;
+          isSpeaking = false;
+          isPaused = false;
+          clearHighlights();
+          updateUIState();
+        }
+
+        // Pause Reading
+        function pauseReading() {
+          if ('speechSynthesis' in window && window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+            window.speechSynthesis.pause();
+            isPaused = true;
+            updateUIState();
+          }
+        }
+
+        // Resume Reading
+        function resumeReading() {
+          if ('speechSynthesis' in window && window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+            isPaused = false;
+            updateUIState();
+          } else if (!isSpeaking) {
+            readCurrentPage();
+          }
+        }
+
+        // Keep-alive pulse for Chrome/Safari speech stall bug
+        function startKeepAlive() {
+          if (keepAliveInterval) clearInterval(keepAliveInterval);
+          keepAliveInterval = setInterval(() => {
+            if ('speechSynthesis' in window && window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+              window.speechSynthesis.pause();
+              window.speechSynthesis.resume();
+            }
+          }, 10000);
+        }
+
+        // Chunk text into sentences / clauses to prevent Chrome & Safari utterance timeouts
+        function splitTextIntoChunks(text, startCharOffset = 0) {
+          const chunks = [];
+          if (!text || text.trim().length === 0) return chunks;
+
+          const sentenceRegex = /[^.!?\n]+[.!?\n]+/g;
+          let match;
+          let lastIndex = 0;
+
+          while ((match = sentenceRegex.exec(text)) !== null) {
+            const sentenceText = match[0];
+            const startIdx = startCharOffset + match.index;
+            chunks.push({ text: sentenceText, startIdx: startIdx });
+            lastIndex = sentenceRegex.lastIndex;
+          }
+
+          if (lastIndex < text.length) {
+            const remainingText = text.substring(lastIndex);
+            if (remainingText.trim().length > 0) {
+              chunks.push({ text: remainingText, startIdx: startCharOffset + lastIndex });
+            }
+          }
+
+          return chunks;
+        }
+
+        // Speak a specific chunk index sequentially with robust boundary & fallback timer support
+        function speakChunk(chunkIdx) {
+          if (chunkIdx >= speechChunks.length) {
+            stopReading();
+            const autoNext = document.getElementById('auto-next-cb').checked;
+            if (autoNext && pdfDoc && pageNum < pdfDoc.numPages) {
+              setTimeout(() => {
+                changePage(pageNum + 1).then(() => {
+                  readCurrentPage();
+                });
+              }, 600);
+            }
+            return;
+          }
+
+          currentChunkIndex = chunkIdx;
+          const chunk = speechChunks[chunkIdx];
+          const utterance = new SpeechSynthesisUtterance(chunk.text);
+
+          const voiceSelect = document.getElementById('voice-select');
+          if (voiceSelect && voiceSelect.value && availableVoices.length > 0) {
+            const voiceObj = availableVoices.find((v) => (v.voiceURI || v.name) === voiceSelect.value);
+            if (voiceObj) utterance.voice = voiceObj;
+          }
+
+          utterance.rate = parseFloat(document.getElementById('speed-rate').value) || 1.0;
+          utterance.pitch = parseFloat(document.getElementById('pitch-rate').value) || 1.0;
+          utterance.volume = parseFloat(document.getElementById('volume-rate').value) || 1.0;
+
+          utterance.onstart = () => {
+            isSpeaking = true;
+            isPaused = false;
+            updateUIState();
+            highlightWordAt(chunk.startIdx);
+          };
+
+          let lastBoundaryTime = Date.now();
+
+          utterance.onboundary = (e) => {
+            lastBoundaryTime = Date.now();
+            if (e.name === 'word' || !e.name) {
+              const actualCharIdx = chunk.startIdx + e.charIndex;
+              highlightWordAt(actualCharIdx);
+            }
+          };
+
+          if (simulatedTimer) clearInterval(simulatedTimer);
+
+          // Word Index Estimation for Firefox/Safari where onboundary doesn't fire regularly
+          let currentWordPos = 0;
+          for (let i = 0; i < wordSpans.length; i++) {
+            if (wordSpans[i].start >= chunk.startIdx) {
+              currentWordPos = i;
+              break;
+            }
+          }
+
+          simulatedTimer = setInterval(() => {
+            // Only advance via timer if onboundary hasn't fired in the last 400ms (cross-browser safety)
+            if (Date.now() - lastBoundaryTime > 400 && isSpeaking && !isPaused && wordSpans.length > 0) {
+              if (currentWordPos < wordSpans.length) {
+                const w = wordSpans[currentWordPos];
+                if (w.start <= chunk.startIdx + chunk.text.length) {
+                  highlightWordAt(w.start);
+                  currentWordPos++;
+                }
+              }
+            }
+          }, 320 / utterance.rate);
+
+          utterance.onend = () => {
+            if (simulatedTimer) clearInterval(simulatedTimer);
+            speakChunk(chunkIdx + 1);
+          };
+
+          utterance.onerror = (e) => {
+            if (simulatedTimer) clearInterval(simulatedTimer);
+            console.warn('TTS Chunk Error or Interrupted:', e);
+            if (isSpeaking) {
+              speakChunk(chunkIdx + 1);
+            }
+          };
+
+          window.speechSynthesis.speak(utterance);
+        }
+
+        // Start Fresh Narration from specific character offset
+        function readFromIndex(startCharIdx = 0) {
+          if (!currentPageText || currentPageText.trim().length === 0) {
+            alert('No readable text detected on this page.');
+            return;
+          }
+
+          stopReading();
+
+          const remainingText = currentPageText.substring(startCharIdx);
+          if (!remainingText.trim()) return;
+
+          speechChunks = splitTextIntoChunks(remainingText, startCharIdx);
+          if (speechChunks.length === 0) return;
+
+          startKeepAlive();
+          speakChunk(0);
+        }
+
+        // Start Fresh Narration for Current Page from beginning
+        function readCurrentPage() {
+          readFromIndex(0);
+        }
+
+        // Change Current Page
+        async function changePage(newNum) {
+          if (!pdfDoc || newNum < 1 || newNum > pdfDoc.numPages) return;
+          stopReading();
+          await renderPage(newNum);
+        }
+
+        // Update UI Button States & Badges
+        function updateUIState() {
+          const readBtnText = document.getElementById('readBtn-text');
+          const narratingBadge = document.getElementById('narrating-badge');
+          const statusBadgeText = document.getElementById('status-badge-text');
+
+          if (isSpeaking && !isPaused) {
+            if (readBtnText) readBtnText.textContent = '⏸ PAUSE';
+            if (narratingBadge) narratingBadge.classList.remove('hidden');
+            if (statusBadgeText) statusBadgeText.textContent = `Narrating Page ${pageNum}...`;
+          } else if (isPaused) {
+            if (readBtnText) readBtnText.textContent = '▶ RESUME';
+            if (narratingBadge) narratingBadge.classList.add('hidden');
+            if (statusBadgeText) statusBadgeText.textContent = `Paused on Page ${pageNum}`;
+          } else {
+            if (readBtnText) readBtnText.textContent = '🔊 READ PAGE';
+            if (narratingBadge) narratingBadge.classList.add('hidden');
+            if (statusBadgeText) {
+              statusBadgeText.textContent = isListening ? 'Speech Engine: Listening for Voice Commands' : 'Speech Engine: Ready';
+            }
+          }
+
+          const diagSpeaking = document.getElementById('diag-speaking-val');
+          if (diagSpeaking) diagSpeaking.textContent = window.speechSynthesis ? String(window.speechSynthesis.speaking) : 'false';
+        }
+
+        // Load PDF Document from ArrayBuffer or File
+        async function loadPdfData(arrayBuffer, filename = 'Document.pdf') {
+          stopReading();
+          document.getElementById('dropzone-area').classList.add('hidden');
+          document.getElementById('canvas-stage').classList.remove('hidden');
+          document.getElementById('doc-title').textContent = `${filename}`;
+
+          pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+          document.getElementById('total-pages').textContent = pdfDoc.numPages;
+          await renderPage(1);
+        }
+
+        // Generate Instant Sample PDF Data
+        function createSamplePdf() {
+          const pdfString = `%PDF-1.4
+1 0 obj <</Type /Catalog /Pages 2 0 R>> endobj
+2 0 obj <</Type /Pages /Kids [3 0 R 4 0 R] /Count 2>> endobj
+3 0 obj <</Type /Page /Parent 2 0 R /Resources <</Font <</F1 5 0 R>>>> /MediaBox [0 0 612 792] /Contents 6 0 R>> endobj
+4 0 obj <</Type /Page /Parent 2 0 R /Resources <</Font <</F1 5 0 R>>>> /MediaBox [0 0 612 792] /Contents 7 0 R>> endobj
+5 0 obj <</Type /Font /Subtype /Type1 /BaseFont /Helvetica>> endobj
+6 0 obj <</Length 265>>
+stream
+BT
+/F1 20 Tf
+50 720 Td
+(Welcome to AudioReader Pro Demo) Tj
+/F1 14 Tf
+0 -40 Td
+(This is Page 1 of our sample document.) Tj
+0 -25 Td
+(AudioReader Pro extracts text and highlights every word in real time) Tj
+0 -20 Td
+(as the speech engine reads it aloud.) Tj
+0 -30 Td
+(Click the Read Page button to test natural text-to-speech narration.) Tj
+ET
+endstream
+endobj
+7 0 obj <</Length 240>>
+stream
+BT
+/F1 20 Tf
+50 720 Td
+(Sample Document - Page 2) Tj
+/F1 14 Tf
+0 -40 Td
+(Auto-advance seamlessly turns to the next page when finished.) Tj
+0 -25 Td
+(You can upload any PDF file using the Upload button above.) Tj
+0 -20 Td
+(Adjust reading speed, pitch, and voice parameters at any time.) Tj
+ET
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000062 00000 n 
+0000000124 00000 n 
+0000000244 00000 n 
+0000000364 00000 n 
+0000000439 00000 n 
+0000000755 00000 n 
+trailer <</Size 8 /Root 1 0 R>>
+startxref
+1046
+%%EOF`;
+          const bytes = new Uint8Array(pdfString.length);
+          for (let i = 0; i < pdfString.length; i++) {
+            bytes[i] = pdfString.charCodeAt(i);
+          }
+          return bytes.buffer;
+        }
+
+        // Event Listeners Setup
+        document.getElementById('readBtn').addEventListener('click', () => {
+          if (isSpeaking) {
+            if (isPaused) {
+              resumeReading();
+            } else {
+              pauseReading();
+            }
+          } else {
+            readCurrentPage();
+          }
+        });
+
+        document.getElementById('stopBtn').addEventListener('click', stopReading);
+
+        document.getElementById('prev-page').addEventListener('click', () => {
+          if (pageNum > 1) changePage(pageNum - 1);
+        });
+
+        document.getElementById('next-page').addEventListener('click', () => {
+          if (pdfDoc && pageNum < pdfDoc.numPages) changePage(pageNum + 1);
+        });
+
+        document.getElementById('page-num-input').addEventListener('change', (e) => {
+          const val = parseInt(e.target.value, 10);
+          if (!isNaN(val)) changePage(val);
+        });
+
+        document.getElementById('zoom-in').addEventListener('click', () => {
+          currentScale = Math.min(2.5, currentScale + 0.25);
+          document.getElementById('zoom-text').textContent = `${Math.round(currentScale * 100)}%`;
+          renderPage(pageNum);
+        });
+
+        document.getElementById('zoom-out').addEventListener('click', () => {
+          currentScale = Math.max(0.75, currentScale - 0.25);
+          document.getElementById('zoom-text').textContent = `${Math.round(currentScale * 100)}%`;
+          renderPage(pageNum);
+        });
+
+        document.getElementById('speed-rate').addEventListener('input', (e) => {
+          document.getElementById('speed-val').textContent = `${parseFloat(e.target.value).toFixed(2)}x`;
+        });
+
+        document.getElementById('pitch-rate').addEventListener('input', (e) => {
+          document.getElementById('pitch-val').textContent = parseFloat(e.target.value).toFixed(1);
+        });
+
+        document.getElementById('volume-rate').addEventListener('input', (e) => {
+          document.getElementById('volume-val').textContent = `${Math.round(parseFloat(e.target.value) * 100)}%`;
+        });
+
+        document.getElementById('toggle-settings-btn').addEventListener('click', () => {
+          document.getElementById('settings-panel').classList.toggle('hidden');
+        });
+
+        // File Upload Handler
+        document.getElementById('file-input').addEventListener('change', (e) => {
+          const file = e.target.files[0];
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = function (ev) {
+              loadPdfData(ev.target.result, file.name);
+            };
+            reader.readAsArrayBuffer(file);
+          }
+        });
+
+        // Load Sample Demo Button Handler
+        const loadDemoHandler = () => {
+          const buffer = createSamplePdf();
+          loadPdfData(buffer, 'Sample_Demo_Document.pdf');
+        };
+
+        document.getElementById('load-demo-btn').addEventListener('click', loadDemoHandler);
+        document.getElementById('dropzone-demo-btn').addEventListener('click', loadDemoHandler);
+
+        // Diagnostics Modal Controls
+        const diagModal = document.getElementById('diagnostics-modal');
+        document.getElementById('diagnostics-btn').addEventListener('click', () => {
+          diagModal.classList.remove('hidden');
+          updateUIState();
+        });
+
+        const closeDiag = () => diagModal.classList.add('hidden');
+        document.getElementById('close-diag-btn').addEventListener('click', closeDiag);
+        document.getElementById('close-diag-btn2').addEventListener('click', closeDiag);
+
+        // Audio Test & Speech Recognition Test in Diagnostics
+        document.getElementById('run-audio-test-btn').addEventListener('click', () => {
+          const logBox = document.getElementById('diag-log-box');
+          logBox.innerHTML = '';
+
+          function appendLog(msg) {
+            const div = document.createElement('div');
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logBox.appendChild(div);
+          }
+
+          appendLog('Testing cross-browser SpeechSynthesis & Recognition support...');
+          if ('speechSynthesis' in window) {
+            appendLog('✓ SpeechSynthesis API present.');
+          } else {
+            appendLog('✗ SpeechSynthesis API not supported.');
+          }
+
+          if (SpeechRecognition) {
+            appendLog('✓ Voice Recognition (SpeechRecognition) API present.');
+            startListening();
+            appendLog('▶ Voice recognition listening active.');
+          } else {
+            appendLog('⚠ SpeechRecognition API not supported on this browser.');
+          }
+
+          window.speechSynthesis.cancel();
+
+          const testUtterance = new SpeechSynthesisUtterance('AudioReader Pro speech engine verification test successful.');
+          testUtterance.rate = 1.0;
+
+          testUtterance.onstart = () => appendLog('SpeechUtterance STARTED.');
+          testUtterance.onend = () => appendLog('SpeechUtterance FINISHED.');
+          testUtterance.onerror = (e) => appendLog(`SpeechUtterance ERROR: ${e.error}`);
+
+          window.speechSynthesis.speak(testUtterance);
+        });
+
+        // Initialize Speech Recognition on page load
+        initSpeechRecognition();
+
+        // Load sample PDF automatically on initial boot
+        if (document.readyState === 'loading') {
+          window.addEventListener('DOMContentLoaded', loadDemoHandler);
+        } else {
+          loadDemoHandler();
+        }
+      })();
+    </script>
+  </body>
+</html>

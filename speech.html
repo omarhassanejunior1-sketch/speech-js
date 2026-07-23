@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PDF Reader with TTS</title>
+
+
+
+<style>
+    body {
+        font-family: Arial;
+        text-align: center;
+        background: #f5f5f5;
+    }
+
+    canvas {
+        border: 2px solid #333;
+        margin-top: 10px;
+    }
+
+    .controls {
+        margin: 15px;
+    }
+
+    .active {
+        border: 4px solid red;
+    }
+</style>
+</head>
+<body>
+
+<h2>📖 PDF Reader + Text-to-Speech</h2>
+<button id="btn">test</button>
+<input type="file" id="upload" accept="application/pdf">
+
+<div class="controls">
+    <button id="prevBtn">⬅ Prev</button>
+    <button id="nextBtn">Next ➡</button>
+    <button id="readBtn">🔊 Read Page</button>
+    <button id="stopBtn">⛔ Stop</button>
+</div>
+
+<div id="page-info"></div>
+
+<canvas id="pdf-canvas"></canvas>
+
+<script>
+    
+
+    document.getElementById("btn").onclick = async () => {
+
+        
+        const voicess = speechSynthesis.getVoices();
+
+        console.log(voicess[2-2]);
+
+        const u = new SpeechSynthesisUtterance("Hello world.");
+        speechSynthesis.cancel();
+        speechSynthesis.resume();
+        //u.voice = voices[0];
+
+        u.volume = 1;
+        u.rate = 1;
+        u.pitch = 1;
+
+        console.log("paused:", speechSynthesis.paused);
+        console.log("pending:", speechSynthesis.pending);
+        console.log("speaking:", speechSynthesis.speaking);
+
+        speechSynthesis.speak(u);
+
+        console.log("After speak:");
+        console.log("paused:", speechSynthesis.paused);
+        console.log("pending:", speechSynthesis.pending);
+        console.log("speaking:", speechSynthesis.speaking);
+    };
+</script>
+<script type="module" >
+    import * as pdfjsLib from "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.1.200/pdf.min.mjs";
+    pdfjsLib.GlobalWorkerOptions.workerSrc ="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.1.200/pdf.worker.min.mjs";
+
+    let pdfDoc = null;
+    let pageNum = 1;
+
+    const canvas = document.getElementById("pdf-canvas");
+    const ctx = canvas.getContext("2d");
+
+    let currentText = "";
+    let voices = [];
+
+    speechSynthesis.onvoiceschanged = () => {
+        voices = speechSynthesis.getVoices();
+        console.log(voices);
+    };
+//////////////////////////////////////////////////////////
+// Load Voices
+//////////////////////////////////////////////////////////
+
+async function loadVoices() {
+
+    return new Promise(resolve => {
+
+        function update() {
+
+            const list = speechSynthesis.getVoices();
+
+            if (list.length) {
+                voices = list;
+                resolve(list);
+            }
+
+        }
+
+        update();
+
+        speechSynthesis.onvoiceschanged = update;
+
+    });
+
+}
+loadVoices();
+//////////////////////////////////////////////////////////
+// Upload PDF
+//////////////////////////////////////////////////////////
+
+document.getElementById("upload").addEventListener("change", async (e) => {
+
+    const file = e.target.files[0];
+
+    if (!file) return;
+
+    const buffer = await file.arrayBuffer();
+
+    const pdfData = new Uint8Array(buffer);
+
+    const loadingTask = pdfjsLib.getDocument({
+        data: pdfData
+    });
+
+    pdfDoc = await loadingTask.promise;
+
+    pageNum = 1;
+
+    renderPage(pageNum);
+
+});
+
+//////////////////////////////////////////////////////////
+// Render Page
+//////////////////////////////////////////////////////////
+
+async function renderPage(num) {
+
+    if (!pdfDoc)
+        return;
+
+    stopReading();
+
+    const page = await pdfDoc.getPage(num);
+
+    const viewport = page.getViewport({
+        scale: 1.5
+    });
+
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+
+    await page.render({
+        canvasContext: ctx,
+        viewport: viewport
+    }).promise;
+
+    document.getElementById("page-info").textContent =
+        `Page ${num} / ${pdfDoc.numPages}`;
+
+    await extractText(page);
+    console.log(pageNum);
+    console.log("Rendering page", num);
+
+}
+
+//////////////////////////////////////////////////////////
+// Extract Text
+//////////////////////////////////////////////////////////
+
+async function extractText(page) {
+
+    const textContent = await page.getTextContent();
+
+    currentText = textContent.items
+        .map(item => item.str)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    console.log(currentText);
+
+}
+
+//////////////////////////////////////////////////////////
+// Navigation
+//////////////////////////////////////////////////////////
+
+async function nextPage() {
+
+    if (!pdfDoc)
+        return;
+
+    if (pageNum >= pdfDoc.numPages)
+        return;
+
+    pageNum++;
+
+    await renderPage(pageNum);
+
+}
+
+async function prevPage() {
+
+    if (!pdfDoc)
+        return;
+
+    if (pageNum <= 1)
+        return;
+
+    pageNum--;
+
+    await renderPage(pageNum);
+
+}
+
+//////////////////////////////////////////////////////////
+// Language Detection
+//////////////////////////////////////////////////////////
+
+function detectLanguage(text) {
+
+    const t = text.toLowerCase();
+
+    if (/[ãõáàâêéíóôúç]/.test(t))
+        return "pt-PT";
+
+    if (/[ñ¿¡]/.test(t))
+        return "es-ES";
+
+    if (/[äöüß]/.test(t))
+        return "de-DE";
+
+    if (/[àèù]/.test(t))
+        return "fr-FR";
+
+    return "en-US";
+
+}
+
+//////////////////////////////////////////////////////////
+// Read Page
+//////////////////////////////////////////////////////////
+
+async function readPage() {
+
+    if (!currentText.trim()) {
+        alert("No text found on this page.");
+        return;
+    }
+
+    stopReading();
+
+    await loadVoices();
+
+    const utterance = new SpeechSynthesisUtterance(currentText);
+
+    //utterance.lang = detectLanguage(currentText);
+
+    utterance.voice = findVoice(utterance.lang);
+
+    utterance.rate = 1;
+
+    utterance.pitch = 1;
+
+    utterance.volume = 1;
+
+    utterance.onstart = () => {
+
+        canvas.classList.add("active");
+
+    };
+
+    utterance.onend = () => {
+
+        canvas.classList.remove("active");
+
+    };
+
+    utterance.onerror = e => {
+
+        console.error(e);
+
+        canvas.classList.remove("active");
+
+    };
+
+    speechSynthesis.speak(utterance);
+
+}
+//////////////////////////////////////////////////////////
+// Find voices
+//////////////////////////////////////////////////////////
+function findVoice(lang) {
+
+    return (
+
+        //voices.find(v => v.lang === lang) ||
+
+        //voices.find(v => v.lang.startsWith(lang.substring(0,2))) ||
+
+        //voices.find(v => v.default) ||
+
+        voices[0]
+
+    );
+
+}
+
+//////////////////////////////////////////////////////////
+// Stop Reading
+//////////////////////////////////////////////////////////
+
+function stopReading() {
+
+    speechSynthesis.cancel();
+
+    canvas.classList.remove("active");
+
+}
+document.getElementById("prevBtn").addEventListener("click", prevPage);
+document.getElementById("nextBtn").addEventListener("click", nextPage);
+document.getElementById("readBtn").addEventListener("click", readPage);
+document.getElementById("stopBtn").addEventListener("click", stopReading);
+</script>
+
+
+<!-- <script>
+
+const url = null;
+let pdfDoc = null;
+let pageNum = 1;
+let canvas = document.getElementById('pdf-canvas');
+let ctx = canvas.getContext('2d');
+
+let currentText = "";
+
+// Load PDF
+document.getElementById('upload').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+
+    if (file.type !== "application/pdf") {
+        alert("Please upload a PDF");
+        return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = function() {
+        const typedarray = new Uint8Array(this.result);
+
+        pdfjsLib.getDocument(typedarray).promise.then(function(pdf) {
+            pdfDoc = pdf;
+            pageNum = 1;
+            renderPage(pageNum);
+        });
+    };
+
+    reader.readAsArrayBuffer(file);
+});
+
+// Render page
+function renderPage(num) {
+    pdfDoc.getPage(num).then(function(page) {
+
+        let viewport = page.getViewport({ scale: 1.5 });
+
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        let renderContext = {
+            canvasContext: ctx,
+            viewport: viewport
+        };
+
+        page.render(renderContext);
+
+        document.getElementById('page-info').innerText =
+            "Page " + num + " / " + pdfDoc.numPages;
+
+        extractText(page);
+    });
+}
+
+// Extract text from page
+async function extractText(page) {
+
+    const textContent = await page.getTextContent();
+
+    currentText = textContent.items
+        .map(i => i.str)
+        .join(" ");
+}
+
+// Navigation
+function nextPage() {
+    if (pageNum < pdfDoc.numPages) {
+        pageNum++;
+        renderPage(pageNum);
+    }
+}
+
+function prevPage() {
+    if (pageNum > 1) {
+        pageNum--;
+        renderPage(pageNum);
+    }
+}
+
+//////////////////////////////////////////////////////////
+// 🔥 LANGUAGE DETECTION (Simple Heuristic)
+//////////////////////////////////////////////////////////
+
+function detectLanguage(text) {
+    if (/[ãõáéíóúç]/i.test(text)) return "pt-PT";
+    if (/[a-z]/i.test(text)) return "en-US";
+    return "en-US";
+}
+
+//////////////////////////////////////////////////////////
+// 🔊 TEXT TO SPEECH
+//////////////////////////////////////////////////////////
+
+function readPage() {
+
+    if (!currentText) {
+        alert("No text found on this page");
+        return;
+    }
+
+    let lang = detectLanguage(currentText);
+
+    let speech = new SpeechSynthesisUtterance(currentText);
+    speech.lang = lang;
+
+    // Try to pick best voice
+    let voices = speechSynthesis.getVoices();
+
+    let selectedVoice = voices.find(v => v.lang === lang);
+    if (selectedVoice) {
+        speech.voice = selectedVoice;
+    }
+
+    speech.rate = 0.48;
+    speech.pitch = 0.8;
+
+    speechSynthesis.speak(speech);
+
+    // Highlight canvas
+    canvas.classList.add("active");
+
+    speech.onend = () => {
+        canvas.classList.remove("active");
+    };
+}
+
+function stopReading() {
+    speechSynthesis.cancel();
+    canvas.classList.remove("active");
+}
+
+</script>-->
+
+</body>
+</html>
